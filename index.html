@@ -23,29 +23,33 @@
 
     html, body {
       margin: 0;
-      min-height: 100%;
+      width: 100%;
+      height: 100%;
       background: var(--bg);
       color: var(--ink);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       overscroll-behavior: none;
+      overflow: hidden;
     }
 
     body {
-      min-height: 100dvh;
+      height: 100dvh;
       padding:
-        max(14px, env(safe-area-inset-top))
-        max(14px, env(safe-area-inset-right))
-        max(16px, env(safe-area-inset-bottom))
-        max(14px, env(safe-area-inset-left));
+        max(10px, env(safe-area-inset-top))
+        max(10px, env(safe-area-inset-right))
+        max(10px, env(safe-area-inset-bottom))
+        max(10px, env(safe-area-inset-left));
       display: flex;
       justify-content: center;
     }
 
     .app {
-      width: min(100%, 760px);
+      width: min(100%, 900px);
+      height: 100%;
+      min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
     }
 
     .topbar {
@@ -73,13 +77,26 @@
       text-overflow: ellipsis;
     }
 
+    .canvas-stage {
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
     .canvas-shell {
       position: relative;
-      width: 100%;
+      height: min(100%, calc(100vw - 20px));
+      width: auto;
+      max-width: 100%;
       aspect-ratio: 1 / 1;
+      flex: 0 0 auto;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 18px;
+      border-radius: 16px;
       overflow: hidden;
       box-shadow: 0 1px 2px rgba(0,0,0,.04);
     }
@@ -118,16 +135,17 @@
     #timer { text-align: right; }
 
     .controls {
+      flex: 0 0 auto;
       display: grid;
       grid-template-columns: 1.35fr 1fr 1fr;
-      gap: 10px;
+      gap: 8px;
     }
 
     button {
       appearance: none;
       border: 1px solid var(--border);
       border-radius: 14px;
-      min-height: 50px;
+      min-height: 46px;
       padding: 0 14px;
       background: #fff;
       color: var(--ink);
@@ -146,12 +164,32 @@
 
     button:active { transform: translateY(1px); }
 
+    button:disabled {
+      cursor: default;
+      opacity: .62;
+      transform: none;
+    }
+
+    #status.error {
+      color: #b42318;
+      white-space: normal;
+      line-height: 1.2;
+    }
+
     .hint {
+      flex: 0 0 auto;
       margin: 0 4px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
+      font-size: 11px;
+      line-height: 1.25;
       text-align: center;
+    }
+
+    @media (max-height: 620px) {
+      .hint { display: none; }
+      .topbar { min-height: 22px; }
+      h1 { font-size: 16px; }
+      button { min-height: 42px; }
     }
 
     .modal-backdrop {
@@ -229,7 +267,8 @@
       <div id="status">Ready</div>
     </div>
 
-    <div class="canvas-shell">
+    <div class="canvas-stage">
+      <div class="canvas-shell">
       <svg id="artboard" viewBox="0 0 1000 1000" role="img" aria-label="GPS drawing canvas">
         <rect x="0" y="0" width="1000" height="1000" fill="#fff"></rect>
         <g id="drawingLayer"></g>
@@ -240,27 +279,27 @@
         <div id="dimensions">0.00 × 0.00 m</div>
         <div id="timer">00:00:00</div>
       </div>
+      </div>
     </div>
 
     <div class="controls">
-      <button id="startStop" class="primary">Start drawing</button>
-      <button id="reset">Reset</button>
-      <button id="save">Save SVG</button>
+      <button id="startStop" class="primary">Sketch</button>
+      <button id="reset">Shake</button>
+      <button id="save">Snap</button>
     </div>
 
     <p class="hint">
-      Keep this page open while drawing. Rotate the view with two fingers.
-      Your vector line is saved locally in this browser after every GPS update.
+      Two-finger rotate. Sketch keeps recording until Shake. Progress is saved locally after every GPS update.
     </p>
   </main>
 
   <div id="resetModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="resetModalTitle">
     <div class="modal">
-      <h2 id="resetModalTitle">Reset this drawing?</h2>
-      <p>You can save the current artwork as an SVG before clearing it, reset without saving, or cancel and keep drawing.</p>
+      <h2 id="resetModalTitle">Shake this sketch?</h2>
+      <p>Shaking clears the current sketch. You can Snap an SVG first, clear it without saving, or cancel.</p>
       <div class="modal-actions">
-        <button id="saveAndReset" class="save-reset">Save image and reset</button>
-        <button id="resetWithoutSaving" class="danger">Reset without saving</button>
+        <button id="saveAndReset" class="save-reset">Snap and Shake</button>
+        <button id="resetWithoutSaving" class="danger">Shake without Snap</button>
         <button id="cancelReset">Cancel</button>
       </div>
     </div>
@@ -556,15 +595,33 @@
     tick();
   }
 
-  function startGeolocation() {
-    if (geoWatchId !== null) return true;
+  function setSketchButton(active) {
+    startStopBtn.textContent = active ? "Sketching…" : "Sketch";
+    startStopBtn.disabled = active;
+  }
 
-    if (!("geolocation" in navigator)) {
-      statusEl.textContent = "GPS unavailable";
+  function setStatus(message, isError = false) {
+    statusEl.textContent = message;
+    statusEl.classList.toggle("error", !!isError);
+  }
+
+  function locationEnvironmentOK() {
+    if (!window.isSecureContext) {
+      setStatus("GPS needs HTTPS — open the page directly from a secure website, not a downloaded/file preview.", true);
       return false;
     }
 
-    statusEl.textContent = "Requesting GPS…";
+    if (!("geolocation" in navigator)) {
+      setStatus("This browser does not expose device location.", true);
+      return false;
+    }
+
+    return true;
+  }
+
+  function watchGeolocation() {
+    if (geoWatchId !== null) return true;
+    if (!locationEnvironmentOK()) return false;
 
     geoWatchId = navigator.geolocation.watchPosition(
       onPosition,
@@ -572,11 +629,77 @@
       {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: 15000
+        timeout: 20000
       }
     );
 
     return true;
+  }
+
+  function startSketch() {
+    if (state.recording) return;
+    if (!locationEnvironmentOK()) return;
+
+    // This call is deliberately made directly from the user's Sketch tap.
+    // On iPad/Safari this gives the browser the clearest opportunity to show
+    // its location permission prompt before we install the continuous watcher.
+    setSketchButton(true);
+    setStatus("Requesting location…");
+
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const hadPoints = allDrawingPoints().length > 0;
+
+        latestGeo = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null,
+          timestamp: pos.timestamp
+        };
+
+        if (!state.origin) {
+          state.origin = {
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude
+          };
+        }
+
+        state.recording = true;
+        state.sessionStartedAt = Date.now();
+
+        // Always create a fresh vector segment when a sketch begins.
+        if (!state.segments.length || state.segments[state.segments.length - 1].length) {
+          state.segments.push([]);
+        }
+
+        persistState();
+        onPosition(pos);
+        watchGeolocation();
+        startTimerLoop();
+        setStatus("Sketching • GPS active");
+        requestRender();
+      },
+      err => {
+        setSketchButton(false);
+
+        let message = "Could not get location.";
+        if (err.code === 1) {
+          message = (window.self !== window.top)
+            ? "Location was blocked in this embedded preview. Open the page directly over HTTPS in Safari."
+            : "Location permission was denied. In Safari, allow Location for this website and tap Sketch again.";
+        } else if (err.code === 2) {
+          message = "Your iPad could not determine its location. Check Location Services and try again.";
+        } else if (err.code === 3) {
+          message = "Location request timed out. Move somewhere with a clearer GPS/Wi-Fi signal and try again.";
+        }
+        setStatus(message, true);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 20000
+      }
+    );
   }
 
   function onPosition(pos) {
@@ -590,7 +713,7 @@
     };
 
     const accText = Number.isFinite(accuracy) ? ` ±${Math.round(accuracy)}m` : "";
-    statusEl.textContent = state.recording ? `Drawing • GPS${accText}` : `GPS${accText}`;
+    setStatus(state.recording ? `Sketching • GPS${accText}` : `GPS${accText}`);
 
     if (!state.origin && state.recording) {
       state.origin = { lat: latitude, lon: longitude };
@@ -598,7 +721,7 @@
 
     if (state.recording && state.origin) {
       if (Number.isFinite(accuracy) && accuracy > MAX_ACCEPTED_ACCURACY_M) {
-        statusEl.textContent = `Waiting for better GPS • ±${Math.round(accuracy)}m`;
+        setStatus(`Waiting for better GPS • ±${Math.round(accuracy)}m`);
         requestRender();
         return;
       }
@@ -626,61 +749,15 @@
   }
 
   function onPositionError(err) {
-    const messages = {
-      1: "Location permission denied",
-      2: "GPS position unavailable",
-      3: "GPS timed out"
-    };
-    statusEl.textContent = messages[err.code] || "GPS error";
-
-    if (state.recording && err.code === 1) {
-      stopRecording();
+    let message = "GPS error";
+    if (err.code === 1) {
+      message = "Location permission is blocked. Shake to clear, or enable Location for this website in Safari.";
+    } else if (err.code === 2) {
+      message = "GPS position unavailable — still Sketching; waiting for location.";
+    } else if (err.code === 3) {
+      message = "GPS timed out — still Sketching; waiting for the next fix.";
     }
-  }
-
-  function startRecording() {
-    if (state.recording) return;
-
-    // Starting a completely new drawing uses the current GPS position as its origin.
-    const hasPoints = allDrawingPoints().length > 0;
-    if (!hasPoints && latestGeo) {
-      state.origin = { lat: latestGeo.lat, lon: latestGeo.lon };
-    }
-
-    state.recording = true;
-    state.sessionStartedAt = Date.now();
-    state.segments.push([]);
-    startStopBtn.textContent = "Stop drawing";
-
-    persistState();
-    startGeolocation();
-    startTimerLoop();
-    requestRender();
-  }
-
-  function stopRecording() {
-    if (!state.recording) return;
-
-    state.elapsedMs = totalElapsedMs();
-    state.sessionStartedAt = null;
-    state.recording = false;
-
-    // Remove an empty segment, if recording stopped before a valid point arrived.
-    if (state.segments.length && state.segments[state.segments.length - 1].length === 0) {
-      state.segments.pop();
-    }
-
-    startStopBtn.textContent = "Start drawing";
-    statusEl.textContent = latestGeo ? "Paused • GPS active" : "Paused";
-
-    persistState();
-    startTimerLoop();
-    requestRender();
-  }
-
-  function toggleRecording() {
-    if (state.recording) stopRecording();
-    else startRecording();
+    setStatus(message, true);
   }
 
   function openResetModal() {
@@ -728,8 +805,8 @@
     }
 
     persistState();
-    startStopBtn.textContent = "Start drawing";
-    statusEl.textContent = "Reset";
+    setSketchButton(false);
+    setStatus("Shaken clean");
     closeResetModal();
     requestRender();
   }
@@ -863,7 +940,7 @@
   artboard.addEventListener("pointercancel", endPointer);
   artboard.addEventListener("lostpointercapture", endPointer);
 
-  startStopBtn.addEventListener("click", toggleRecording);
+  startStopBtn.addEventListener("click", startSketch);
   resetBtn.addEventListener("click", resetDrawing);
   saveBtn.addEventListener("click", exportSVG);
 
@@ -892,19 +969,20 @@
   });
 
   // Restore UI immediately.
-  startStopBtn.textContent = state.recording ? "Stop drawing" : "Start drawing";
+  setSketchButton(state.recording);
   updateHUD();
   requestRender();
 
-  // If the page was reloaded mid-drawing, resume GPS collection and timer.
-  if (state.recording) {
-    statusEl.textContent = "Resuming GPS…";
-    startGeolocation();
+  if (!window.isSecureContext) {
+    setStatus("GPS requires HTTPS. Drawing tools work here, but Sketch needs a secure hosted page.", true);
+  } else if (state.recording) {
+    setStatus("Resuming Sketch…");
+    watchGeolocation();
     startTimerLoop();
   } else if (state.origin || allDrawingPoints().length) {
-    statusEl.textContent = "Drawing restored";
-    // Re-acquire current position so the red dot becomes live again.
-    startGeolocation();
+    setStatus("Sketch restored");
+  } else {
+    setStatus("Ready");
   }
 })();
 </script>
