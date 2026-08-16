@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#f4f4f2">
+  <title>GPS Etch-a-Sketch</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f4f2;
+      --panel: #ffffff;
+      --ink: #111111;
+      --muted: #6c6c68;
+      --line: #111111;
+      --dot: #e32929;
+      --border: #d8d8d2;
+      --button: #111111;
+      --button-text: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overscroll-behavior: none;
+    }
+
+    body {
+      min-height: 100dvh;
+      padding:
+        max(14px, env(safe-area-inset-top))
+        max(14px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-bottom))
+        max(14px, env(safe-area-inset-left));
+      display: flex;
+      justify-content: center;
+    }
+
+    .app {
+      width: min(100%, 760px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 28px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+
+    #status {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .canvas-shell {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+
+    #artboard {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      background: white;
+    }
+
+    .hud {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      pointer-events: none;
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      line-height: 1.2;
+      color: #111;
+      text-shadow:
+        0 1px 0 rgba(255,255,255,.95),
+        1px 0 0 rgba(255,255,255,.95),
+        -1px 0 0 rgba(255,255,255,.95),
+        0 -1px 0 rgba(255,255,255,.95);
+    }
+
+    #dimensions { text-align: left; }
+    #timer { text-align: right; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      min-height: 50px;
+      padding: 0 14px;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button.primary {
+      background: var(--button);
+      border-color: var(--button);
+      color: var(--button-text);
+    }
+
+    button:active { transform: translateY(1px); }
+
+    .hint {
+      margin: 0 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: center;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding:
+        max(18px, env(safe-area-inset-top))
+        max(18px, env(safe-area-inset-right))
+        max(18px, env(safe-area-inset-bottom))
+        max(18px, env(safe-area-inset-left));
+      background: rgba(0, 0, 0, .36);
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal {
+      width: min(100%, 430px);
+      background: #fff;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 18px 60px rgba(0,0,0,.24);
+    }
+
+    .modal h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .modal p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .modal-actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .modal-actions .danger {
+      border-color: #b42318;
+      color: #b42318;
+      background: #fff;
+    }
+
+    .modal-actions .save-reset {
+      background: var(--button);
+      border-color: var(--button);
+      color: var(--button-text);
+    }
+
+    @media (max-width: 420px) {
+      .controls {
+        grid-template-columns: 1fr 1fr;
+      }
+      #startStop {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="topbar">
+      <h1>GPS Etch-a-Sketch</h1>
+      <div id="status">Ready</div>
+    </div>
+
+    <div class="canvas-shell">
+      <svg id="artboard" viewBox="0 0 1000 1000" role="img" aria-label="GPS drawing canvas">
+        <rect x="0" y="0" width="1000" height="1000" fill="#fff"></rect>
+        <g id="drawingLayer"></g>
+        <circle id="locationDot" cx="500" cy="500" r="10" fill="#e32929" stroke="#fff" stroke-width="4" vector-effect="non-scaling-stroke" visibility="hidden"></circle>
+      </svg>
+
+      <div class="hud">
+        <div id="dimensions">0.00 × 0.00 m</div>
+        <div id="timer">00:00:00</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="startStop" class="primary">Start drawing</button>
+      <button id="reset">Reset</button>
+      <button id="save">Save SVG</button>
+    </div>
+
+    <p class="hint">
+      Keep this page open while drawing. Rotate the view with two fingers.
+      Your vector line is saved locally in this browser after every GPS update.
+    </p>
+  </main>
+
+  <div id="resetModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="resetModalTitle">
+    <div class="modal">
+      <h2 id="resetModalTitle">Reset this drawing?</h2>
+      <p>You can save the current artwork as an SVG before clearing it, reset without saving, or cancel and keep drawing.</p>
+      <div class="modal-actions">
+        <button id="saveAndReset" class="save-reset">Save image and reset</button>
+        <button id="resetWithoutSaving" class="danger">Reset without saving</button>
+        <button id="cancelReset">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  const STORAGE_KEY = "gps-etch-a-sketch-v1";
+  const SVG_SIZE = 1000;
+  const MIN_VIEW_METRES = 3;
+  const CONTENT_FRACTION = 0.90; // 5% visual border on each side.
+  const EARTH_RADIUS_M = 6371008.8;
+  const MAX_ACCEPTED_ACCURACY_M = 40;
+  const MIN_POINT_DISTANCE_M = 0.20;
+
+  const artboard = document.getElementById("artboard");
+  const drawingLayer = document.getElementById("drawingLayer");
+  const locationDot = document.getElementById("locationDot");
+  const dimensionsEl = document.getElementById("dimensions");
+  const timerEl = document.getElementById("timer");
+  const statusEl = document.getElementById("status");
+  const startStopBtn = document.getElementById("startStop");
+  const resetBtn = document.getElementById("reset");
+  const saveBtn = document.getElementById("save");
+  const resetModal = document.getElementById("resetModal");
+  const saveAndResetBtn = document.getElementById("saveAndReset");
+  const resetWithoutSavingBtn = document.getElementById("resetWithoutSaving");
+  const cancelResetBtn = document.getElementById("cancelReset");
+
+  const defaultState = () => ({
+    version: 1,
+    origin: null,              // {lat, lon}
+    segments: [],              // array of arrays of {x, y}
+    recording: false,
+    elapsedMs: 0,
+    sessionStartedAt: null,
+    rotationRad: 0
+  });
+
+  let state = loadState();
+  let geoWatchId = null;
+  let latestGeo = null;       // {lat, lon, accuracy, timestamp}
+  let timerRAF = null;
+  let renderQueued = false;
+
+  // Two-finger rotation state.
+  const activePointers = new Map();
+  let gestureStartAngle = null;
+  let gestureStartRotation = 0;
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return defaultState();
+      const parsed = JSON.parse(raw);
+      const base = defaultState();
+      const loaded = Object.assign(base, parsed);
+
+      if (!Array.isArray(loaded.segments)) loaded.segments = [];
+      loaded.segments = loaded.segments
+        .filter(Array.isArray)
+        .map(seg => seg.filter(p =>
+          p && Number.isFinite(p.x) && Number.isFinite(p.y)
+        ));
+
+      if (!loaded.origin ||
+          !Number.isFinite(loaded.origin.lat) ||
+          !Number.isFinite(loaded.origin.lon)) {
+        loaded.origin = null;
+      }
+
+      if (!Number.isFinite(loaded.elapsedMs)) loaded.elapsedMs = 0;
+      if (!Number.isFinite(loaded.rotationRad)) loaded.rotationRad = 0;
+
+      // If the page was reloaded while recording, keep the timer continuous.
+      if (loaded.recording && !Number.isFinite(loaded.sessionStartedAt)) {
+        loaded.sessionStartedAt = Date.now();
+      }
+
+      return loaded;
+    } catch (err) {
+      console.warn("Could not restore saved drawing:", err);
+      return defaultState();
+    }
+  }
+
+  function persistState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      console.warn("Could not save drawing locally:", err);
+      statusEl.textContent = "Local save failed";
+    }
+  }
+
+  function totalElapsedMs() {
+    if (state.recording && Number.isFinite(state.sessionStartedAt)) {
+      return state.elapsedMs + Math.max(0, Date.now() - state.sessionStartedAt);
+    }
+    return state.elapsedMs;
+  }
+
+  function formatDuration(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return [hours, minutes, seconds].map(n => String(n).padStart(2, "0")).join(":");
+  }
+
+  function degToRad(v) {
+    return v * Math.PI / 180;
+  }
+
+  function gpsToLocalMetres(lat, lon) {
+    if (!state.origin) return { x: 0, y: 0 };
+
+    const lat1 = degToRad(state.origin.lat);
+    const lat2 = degToRad(lat);
+    const dLat = lat2 - lat1;
+    const dLon = degToRad(lon - state.origin.lon);
+    const meanLat = (lat1 + lat2) / 2;
+
+    return {
+      x: dLon * Math.cos(meanLat) * EARTH_RADIUS_M, // east
+      y: dLat * EARTH_RADIUS_M                       // north
+    };
+  }
+
+  function rotatePoint(p, angle = state.rotationRad) {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return {
+      x: p.x * c - p.y * s,
+      y: p.x * s + p.y * c
+    };
+  }
+
+  function allDrawingPoints() {
+    const out = [];
+    for (const seg of state.segments) {
+      for (const p of seg) out.push(p);
+    }
+    return out;
+  }
+
+  function rotatedBounds(points = allDrawingPoints(), angle = state.rotationRad) {
+    if (!points.length) {
+      return {
+        minX: 0, maxX: 0, minY: 0, maxY: 0,
+        width: 0, height: 0, side: 0,
+        centerX: 0, centerY: 0
+      };
+    }
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    for (const p of points) {
+      const r = rotatePoint(p, angle);
+      if (r.x < minX) minX = r.x;
+      if (r.x > maxX) maxX = r.x;
+      if (r.y < minY) minY = r.y;
+      if (r.y > maxY) maxY = r.y;
+    }
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    return {
+      minX, maxX, minY, maxY,
+      width,
+      height,
+      side: Math.max(width, height),
+      centerX: (minX + maxX) / 2,
+      centerY: (minY + maxY) / 2
+    };
+  }
+
+  function viewMetrics() {
+    const b = rotatedBounds();
+    const viewSideM = Math.max(
+      MIN_VIEW_METRES,
+      b.side > 0 ? b.side / CONTENT_FRACTION : MIN_VIEW_METRES
+    );
+
+    return {
+      bounds: b,
+      viewSideM,
+      scale: SVG_SIZE / viewSideM,
+      centerX: b.centerX,
+      centerY: b.centerY
+    };
+  }
+
+  function toScreen(rotated, metrics) {
+    return {
+      x: SVG_SIZE / 2 + (rotated.x - metrics.centerX) * metrics.scale,
+      y: SVG_SIZE / 2 - (rotated.y - metrics.centerY) * metrics.scale
+    };
+  }
+
+  function pointDistance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  function updateHUD() {
+    const b = rotatedBounds();
+    dimensionsEl.textContent = `${b.side.toFixed(2)} × ${b.side.toFixed(2)} m`;
+    timerEl.textContent = formatDuration(totalElapsedMs());
+  }
+
+  function requestRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => {
+      renderQueued = false;
+      render();
+    });
+  }
+
+  function render() {
+    const metrics = viewMetrics();
+
+    drawingLayer.replaceChildren();
+
+    for (const seg of state.segments) {
+      if (!seg.length) continue;
+
+      if (seg.length === 1) {
+        const r = rotatePoint(seg[0]);
+        const s = toScreen(r, metrics);
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", s.x.toFixed(2));
+        c.setAttribute("cy", s.y.toFixed(2));
+        c.setAttribute("r", "3");
+        c.setAttribute("fill", "#111");
+        drawingLayer.appendChild(c);
+        continue;
+      }
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      let d = "";
+
+      seg.forEach((p, i) => {
+        const r = rotatePoint(p);
+        const s = toScreen(r, metrics);
+        d += `${i === 0 ? "M" : "L"} ${s.x.toFixed(2)} ${s.y.toFixed(2)} `;
+      });
+
+      path.setAttribute("d", d.trim());
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "#111");
+      path.setAttribute("stroke-width", "4");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      path.setAttribute("vector-effect", "non-scaling-stroke");
+      drawingLayer.appendChild(path);
+    }
+
+    if (latestGeo && state.origin) {
+      const local = gpsToLocalMetres(latestGeo.lat, latestGeo.lon);
+      const rotated = rotatePoint(local);
+      const s = toScreen(rotated, metrics);
+      locationDot.setAttribute("cx", s.x.toFixed(2));
+      locationDot.setAttribute("cy", s.y.toFixed(2));
+
+      const visible =
+        s.x >= -30 && s.x <= SVG_SIZE + 30 &&
+        s.y >= -30 && s.y <= SVG_SIZE + 30;
+
+      locationDot.setAttribute("visibility", visible ? "visible" : "hidden");
+    } else {
+      locationDot.setAttribute("visibility", "hidden");
+    }
+
+    updateHUD();
+  }
+
+  function startTimerLoop() {
+    if (timerRAF) cancelAnimationFrame(timerRAF);
+
+    const tick = () => {
+      updateHUD();
+      if (state.recording) {
+        timerRAF = requestAnimationFrame(tick);
+      } else {
+        timerRAF = null;
+      }
+    };
+
+    tick();
+  }
+
+  function startGeolocation() {
+    if (geoWatchId !== null) return true;
+
+    if (!("geolocation" in navigator)) {
+      statusEl.textContent = "GPS unavailable";
+      return false;
+    }
+
+    statusEl.textContent = "Requesting GPS…";
+
+    geoWatchId = navigator.geolocation.watchPosition(
+      onPosition,
+      onPositionError,
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 15000
+      }
+    );
+
+    return true;
+  }
+
+  function onPosition(pos) {
+    const { latitude, longitude, accuracy } = pos.coords;
+
+    latestGeo = {
+      lat: latitude,
+      lon: longitude,
+      accuracy: Number.isFinite(accuracy) ? accuracy : null,
+      timestamp: pos.timestamp
+    };
+
+    const accText = Number.isFinite(accuracy) ? ` ±${Math.round(accuracy)}m` : "";
+    statusEl.textContent = state.recording ? `Drawing • GPS${accText}` : `GPS${accText}`;
+
+    if (!state.origin && state.recording) {
+      state.origin = { lat: latitude, lon: longitude };
+    }
+
+    if (state.recording && state.origin) {
+      if (Number.isFinite(accuracy) && accuracy > MAX_ACCEPTED_ACCURACY_M) {
+        statusEl.textContent = `Waiting for better GPS • ±${Math.round(accuracy)}m`;
+        requestRender();
+        return;
+      }
+
+      const p = gpsToLocalMetres(latitude, longitude);
+      let seg = state.segments[state.segments.length - 1];
+
+      if (!seg) {
+        seg = [];
+        state.segments.push(seg);
+      }
+
+      const last = seg[seg.length - 1];
+      if (!last || pointDistance(last, p) >= MIN_POINT_DISTANCE_M) {
+        // Round stored metre coordinates to millimetres to keep local storage compact.
+        seg.push({
+          x: Math.round(p.x * 1000) / 1000,
+          y: Math.round(p.y * 1000) / 1000
+        });
+        persistState();
+      }
+    }
+
+    requestRender();
+  }
+
+  function onPositionError(err) {
+    const messages = {
+      1: "Location permission denied",
+      2: "GPS position unavailable",
+      3: "GPS timed out"
+    };
+    statusEl.textContent = messages[err.code] || "GPS error";
+
+    if (state.recording && err.code === 1) {
+      stopRecording();
+    }
+  }
+
+  function startRecording() {
+    if (state.recording) return;
+
+    // Starting a completely new drawing uses the current GPS position as its origin.
+    const hasPoints = allDrawingPoints().length > 0;
+    if (!hasPoints && latestGeo) {
+      state.origin = { lat: latestGeo.lat, lon: latestGeo.lon };
+    }
+
+    state.recording = true;
+    state.sessionStartedAt = Date.now();
+    state.segments.push([]);
+    startStopBtn.textContent = "Stop drawing";
+
+    persistState();
+    startGeolocation();
+    startTimerLoop();
+    requestRender();
+  }
+
+  function stopRecording() {
+    if (!state.recording) return;
+
+    state.elapsedMs = totalElapsedMs();
+    state.sessionStartedAt = null;
+    state.recording = false;
+
+    // Remove an empty segment, if recording stopped before a valid point arrived.
+    if (state.segments.length && state.segments[state.segments.length - 1].length === 0) {
+      state.segments.pop();
+    }
+
+    startStopBtn.textContent = "Start drawing";
+    statusEl.textContent = latestGeo ? "Paused • GPS active" : "Paused";
+
+    persistState();
+    startTimerLoop();
+    requestRender();
+  }
+
+  function toggleRecording() {
+    if (state.recording) stopRecording();
+    else startRecording();
+  }
+
+  function openResetModal() {
+    resetModal.classList.add("open");
+    document.body.style.overflow = "hidden";
+    cancelResetBtn.focus();
+  }
+
+  function closeResetModal() {
+    resetModal.classList.remove("open");
+    document.body.style.overflow = "";
+    resetBtn.focus();
+  }
+
+  function performReset() {
+    if (state.recording) {
+      state.elapsedMs = totalElapsedMs();
+    }
+
+    state = {
+      version: 1,
+      origin: null,
+      segments: [],
+      recording: false,
+      elapsedMs: 0,
+      sessionStartedAt: null,
+      rotationRad: 0
+    };
+
+    // Test builds define this variable for their synthetic red dot.
+    if (typeof demoCurrentPoint !== "undefined") {
+      demoCurrentPoint = null;
+    }
+
+    latestGeo = null;
+
+    if (geoWatchId !== null && "geolocation" in navigator) {
+      navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = null;
+    }
+
+    if (timerRAF) {
+      cancelAnimationFrame(timerRAF);
+      timerRAF = null;
+    }
+
+    persistState();
+    startStopBtn.textContent = "Start drawing";
+    statusEl.textContent = "Reset";
+    closeResetModal();
+    requestRender();
+  }
+
+  function resetDrawing() {
+    openResetModal();
+  }
+
+  function escapeXML(text) {
+    return String(text)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  function exportSVG() {
+    const points = allDrawingPoints();
+    if (!points.length) {
+      alert("There is no drawing to save yet.");
+      return false;
+    }
+
+    const angle = state.rotationRad;
+    const b = rotatedBounds(points, angle);
+    const viewSideM = Math.max(
+      MIN_VIEW_METRES,
+      b.side > 0 ? b.side / CONTENT_FRACTION : MIN_VIEW_METRES
+    );
+    const scale = SVG_SIZE / viewSideM;
+    const cx = b.centerX;
+    const cy = b.centerY;
+
+    const screenFor = p => {
+      const r = rotatePoint(p, angle);
+      return {
+        x: SVG_SIZE / 2 + (r.x - cx) * scale,
+        y: SVG_SIZE / 2 - (r.y - cy) * scale
+      };
+    };
+
+    const pathMarkup = state.segments.map(seg => {
+      if (!seg.length) return "";
+
+      if (seg.length === 1) {
+        const s = screenFor(seg[0]);
+        return `<circle cx="${s.x.toFixed(2)}" cy="${s.y.toFixed(2)}" r="3" fill="#111"/>`;
+      }
+
+      let d = "";
+      seg.forEach((p, i) => {
+        const s = screenFor(p);
+        d += `${i === 0 ? "M" : "L"} ${s.x.toFixed(2)} ${s.y.toFixed(2)} `;
+      });
+
+      return `<path d="${d.trim()}" fill="none" stroke="#111" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }).join("\n  ");
+
+    const duration = formatDuration(totalElapsedMs());
+    const sizeLabel = `${b.side.toFixed(2)} × ${b.side.toFixed(2)} m`;
+    const created = new Date().toISOString();
+
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000">
+  <title>GPS Etch-a-Sketch</title>
+  <desc>Vector GPS drawing. Time: ${escapeXML(duration)}. Size: ${escapeXML(sizeLabel)}. Exported: ${escapeXML(created)}.</desc>
+  <rect width="1000" height="1000" fill="#fff"/>
+  ${pathMarkup}
+  <g fill="#111" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="22">
+    <text x="28" y="966">${escapeXML(sizeLabel)}</text>
+    <text x="972" y="966" text-anchor="end">${escapeXML(duration)}</text>
+  </g>
+</svg>`;
+
+    const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `gps-drawing-${stamp}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  }
+
+  function currentPointerAngle() {
+    if (activePointers.size !== 2) return null;
+    const pts = [...activePointers.values()];
+    return Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+  }
+
+  artboard.addEventListener("pointerdown", e => {
+    if (e.pointerType !== "touch") return;
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    artboard.setPointerCapture?.(e.pointerId);
+
+    if (activePointers.size === 2) {
+      gestureStartAngle = currentPointerAngle();
+      gestureStartRotation = state.rotationRad;
+    }
+  });
+
+  artboard.addEventListener("pointermove", e => {
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size === 2 && gestureStartAngle !== null) {
+      const angle = currentPointerAngle();
+      if (angle !== null) {
+        // Screen-space angle runs opposite our north-up drawing coordinates.
+        state.rotationRad = gestureStartRotation - (angle - gestureStartAngle);
+        persistState();
+        requestRender();
+      }
+    }
+  });
+
+  function endPointer(e) {
+    activePointers.delete(e.pointerId);
+
+    if (activePointers.size < 2) {
+      gestureStartAngle = null;
+      gestureStartRotation = state.rotationRad;
+    }
+  }
+
+  artboard.addEventListener("pointerup", endPointer);
+  artboard.addEventListener("pointercancel", endPointer);
+  artboard.addEventListener("lostpointercapture", endPointer);
+
+  startStopBtn.addEventListener("click", toggleRecording);
+  resetBtn.addEventListener("click", resetDrawing);
+  saveBtn.addEventListener("click", exportSVG);
+
+  cancelResetBtn.addEventListener("click", closeResetModal);
+  resetWithoutSavingBtn.addEventListener("click", performReset);
+  saveAndResetBtn.addEventListener("click", () => {
+    if (exportSVG()) {
+      // Allow the browser's download action to be initiated before clearing state.
+      setTimeout(performReset, 0);
+    }
+  });
+
+  resetModal.addEventListener("click", e => {
+    if (e.target === resetModal) closeResetModal();
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && resetModal.classList.contains("open")) {
+      closeResetModal();
+    }
+  });
+
+  window.addEventListener("beforeunload", persistState);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") persistState();
+  });
+
+  // Restore UI immediately.
+  startStopBtn.textContent = state.recording ? "Stop drawing" : "Start drawing";
+  updateHUD();
+  requestRender();
+
+  // If the page was reloaded mid-drawing, resume GPS collection and timer.
+  if (state.recording) {
+    statusEl.textContent = "Resuming GPS…";
+    startGeolocation();
+    startTimerLoop();
+  } else if (state.origin || allDrawingPoints().length) {
+    statusEl.textContent = "Drawing restored";
+    // Re-acquire current position so the red dot becomes live again.
+    startGeolocation();
+  }
+})();
+</script>
+</body>
+</html>
